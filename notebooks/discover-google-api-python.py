@@ -145,7 +145,7 @@ tracks
 
 # ## 3. Clean up track titles
 
-for i, track in enumerate(tracks[:50]):
+for i, track in enumerate(tracks[:]):
     print(i, track['name'])
 
 # List of things to remove:
@@ -200,16 +200,47 @@ def clean_premiere_prefix(string):
 
 
 def clean_parentheses(string):
-    # look for strings like (1XA), (unreleased), (Visionquest 2016)
-    pass
+    """
+    we should remove what's in brackets if the content within the brackets does not contain:
+
+        * mix
+        * remix
+        * edit
+        * rework
+        * reshape
+        * dub
+        * version
+
+    """
+    allowed_names = ('mix', 'remix', 'edit', 'rework', 'reshape', 'dub', 'version')
+    groups = re.findall(r'(\([^\)]*\))', string)
+    if groups:
+        if len(groups) > 1:
+            # additional parentheses usually contains junk info
+            for group in groups[1:]:
+                string = string.replace(group, '').strip()
+        else:
+            # remove parenthesis only if does not contain any allowed name
+            group = groups[0]
+            if not any(name in group for name in allowed_names):
+                string = string.replace(group, '').strip()
+    return string
+
 
 def clean(string):
-    for function in [clean_tracklist, clean_label_or_catalog_number, clean_premiere_prefix]:
+    for function in [clean_tracklist, clean_label_or_catalog_number, clean_premiere_prefix, clean_parentheses]:
         string = function(string)
     return string.strip()
 
 
 # -
+
+string = 'Richy Ahmed - Sweat (Ben Rau Remix) (unreleased)'
+string = 'Echomen ‎– One Way (Original Mix)'
+string = 'Unknown Artist ‎– A Untitled (rootz09)'
+string = 'Guti & Cristi Cons - Nuevo (Vinyl Only)'
+string = 'Les Points - Untitled B1 (Timeless 01)'
+clean_parentheses(string)
 
 for i, track in enumerate(tracks[:]):
     print(i, clean(track['name']))
@@ -278,15 +309,6 @@ for i, track in enumerate(tracks):
         track['search string'] = ' '.join(track['artists']) + ' ' + track['title']
         print(f'{i:03}: artists="{" & ".join(track["artists"]):30}" title="{track["title"]:30}"')
 
-# we should remove what's in brackets if the content within the brackets does not contain:
-# * mix
-# * remix
-# * edit
-# * rework
-# * reshape
-# * dub
-# * version
-
 tracks
 
 # ## 5. Search for track on spotify
@@ -306,7 +328,7 @@ sp = spotipy.Spotify(
 )
 # -
 
-track = tracks[0]  # opal sunn laika, exists on spotify
+track = tracks[1]  # opal sunn laika, exists on spotify
 track
 
 result = sp.search(track['search string'])
@@ -383,5 +405,93 @@ result['tracks']['items'][0]['artists']
 result = sp.search(tracks[8]['search string'])
 
 result 
+
+# ## 8. Actually create playlist
+
+# https://open.spotify.com/user/6iqjcfrvp6kmgqx0u4ivp9ueg?si=ANpDF-y0TVOWbVh6tgBmdg
+# NOTE: one can create a playlist twice, so you need to make sure playlist does not already exist
+playlists = [pl['name'] for pl in sp.user_playlists(SPOTIFY_USER_ID)['items']]
+playlist_name = 'microhouse case'
+if playlist_name not in playlists:
+    sp.user_playlist_create(
+        user=SPOTIFY_USER_ID,
+        name=playlist_name,
+        public=True)
+else:
+    print(f'{playlist_name} already exists, skipping create')
+playlist_id = None
+for playlist in sp.user_playlists(SPOTIFY_USER_ID)['items']:
+    if playlist['name'] == playlist_name:
+        playlist_id = playlist['id']
+
+playlist['tracks']['total']
+
+tracks_existing = sp.user_playlist_tracks(user=SPOTIFY_USER_ID, playlist_id=playlist_id, limit=100)
+
+
+
+tracks_existing['items']
+
+tracks_existing
+
+ids_existing = [track['id'] for track in tracks_existing['items']]
+
+ids_new = []
+for i, track in enumerate(tracks):
+    if 'artists' not in track:
+        print(f'Skipping track {i} because not parsed: {track["name"]}')
+        continue
+    print(f'Searching track {i + 1:03}: {" & ".join(track["artists"])} - {track["title"]}')
+    result = sp.search(track['search string'])
+    matches = result['tracks']['items']
+    if len(matches):
+        risks = []
+        for k, match in enumerate(matches):
+            match_name = match['name']
+            match_artists = [artist['name'] for artist in match['artists']]
+            risk, missing_artists, mismatch = get_risk_score(track, match)
+            risks.append(risk)
+            print(f'    - match {k}: risk {risk} - missing artists {" & ".join(missing_artists)} - mismatch in name: {mismatch}')
+        if any(risk < 1.0 for risk in risks):
+            match = matches[risks.index(min(risks))]
+            ids_new.append(match['id'])
+            print(f'    Matched and added track ID with risk score of {min(risks)}.')
+
+len(ids_new)
+
+ids_to_add = list(set(ids_new) - set(ids_existing))
+
+max_tracks_per_request = 100
+for offset in range(0, len(ids_to_add), max_tracks_per_request):
+    sp.playlist_add_items(
+        playlist_id=playlist_id,
+        items=ids_to_add[offset:offset + max_tracks_per_request],
+        position=None,
+    )
+
+# ## 9. list all elements of spotify playlist
+
+tracks_existing = sp.user_playlist_tracks(user=SPOTIFY_USER_ID, playlist_id=playlist_id, limit=100)
+
+tracks_existing.keys()
+
+# +
+offset = 0
+tracks_spotify = []
+
+while True:
+    response = sp.user_playlist_tracks(
+        user=SPOTIFY_USER_ID,
+        playlist_id=playlist_id,
+        limit=100,
+        offset=offset,
+    )
+    tracks_spotify.extend(response['items'])
+    offset = len(tracks_spotify)
+    if len(tracks_spotify) == response['total']:
+        break
+# -
+
+len(tracks_spotify)
 
 
