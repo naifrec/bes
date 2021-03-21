@@ -1,7 +1,7 @@
 import fire
 
 from bes.channel import SpotifyChannel
-from bes.playlist import SpotifyPlaylist, YouTubePlayList
+from bes.playlist import YouTubePlayList
 
 
 MAPPING = {
@@ -26,21 +26,10 @@ def main(playlist_name):
 
     # get or create spotify channel
     spotify_channel = SpotifyChannel()
-    spotify_playlists_names = \
-        [playlist.name for playlist in spotify_channel.playlists]
-    if playlist_name not in spotify_playlists_names:
-        spotify_channel.add_playlist(name=playlist_name)
-        print(f'{playlist_name} did not exist on spotify, created one')
-    else:
-        print(f'{playlist_name} already exists, skipping create')
-    spotify_channel.refresh()
-    spotify_playlist_id = None
-    for spotify_playlist in spotify_channel.playlists:
-        if spotify_playlist.name == playlist_name:
-            break
+    spotify_playlist = spotify_channel.get(playlist_name)
 
     # add tracks
-    spotify_playlist.add_tracks(youtube_playlist.tracks)
+    spotify_playlist.add_tracks(youtube_playlist)
 
 
 

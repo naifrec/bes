@@ -1,11 +1,11 @@
 from bes import api
 from bes.track import SpotifyTrack, YouTubeTrack
-from bes.score import get_risk_score
 
 
 class PlayList(object):
     name = None
     id = None
+    size = None
 
     def __init__(self, playlist_id):
         raise NotImplementedError
@@ -22,10 +22,13 @@ class PlayList(object):
         raise NotImplementedError
 
     def __len__(self):
-        raise NotImplementedError
+        return len(self.tracks)
+
+    def __iter__(self):
+        yield from self.tracks
 
 
-class YouTubePlayList(object):
+class YouTubePlayList(PlayList):
     def __init__(self, id, name, size=None):
         self.api = api.get_or_create_youtube_api()
         self.id = id
@@ -75,10 +78,18 @@ class YouTubePlayList(object):
             name=item['snippet']['localized']['title'],
         )
 
-    def __len__(self):
-        if self.size is None:
-            self.tracks  # get the tracks to get the size
-        return self.size
+    def to_spotify(self):
+        matched_tracks = []
+        for i, track in enumerate(self):
+            print(f'{i + 1:03} searching track on spotify: '
+                  f'{" & ".join(track.artists)} - {track.title}')
+            try:
+                matched_track = SpotifyTrack.from_youtube(track)
+                matched_tracks.append(matched_track)
+            except ValueError as e:
+                print(e)
+                continue
+        return matched_tracks
 
 
 class SpotifyPlaylist(PlayList):
@@ -112,7 +123,7 @@ class SpotifyPlaylist(PlayList):
             for item in response['items']:
                 tracks.append(SpotifyTrack.from_item(item))
             offset = len(tracks)
-            if len(tracks) == self.size:
+            if len(tracks) == response['total']:
                 break
         return tracks
 
@@ -124,24 +135,9 @@ class SpotifyPlaylist(PlayList):
             size=item['tracks']['total'],
         )
 
-    def add_tracks(self, tracks):
-        ids_existing = [track.id for track in self.tracks]
-
-        ids_youtube = []
-        for i, track in enumerate(tracks):
-            print(f'Searching track {i + 1:03}: {" & ".join(track.artists)} - {track.title}')
-            result = self.api.search(track.search_string)
-            matches = [SpotifyTrack.from_item(item) for item in result['tracks']['items']]
-            if len(matches):
-                risks = []
-                for k, match in enumerate(matches):
-                    risk, missing_artists, mismatch = get_risk_score(track, match)
-                    risks.append(risk)
-                    print(f'    - match {k}: risk {risk} - missing artists {" & ".join(missing_artists)} - mismatch in name: {mismatch}')
-                if any(risk < 1.0 for risk in risks):
-                    match = matches[risks.index(min(risks))]
-                    ids_youtube.append(match.id)
-                    print(f'    Matched and added track ID with risk score of {min(risks)}.')
+    def add_tracks(self, playlist):
+        ids_existing = [track.id for track in self]
+        ids_youtube = [track.id for track in playlist.to_spotify()]
 
         ids_to_add = list(set(ids_youtube) - set(ids_existing))
         print(f'There are:\n\t- {len(ids_youtube)} tracks matched from YouTube'
@@ -155,9 +151,4 @@ class SpotifyPlaylist(PlayList):
                 items=ids_to_add[offset:offset + self._MAX_TRACKS_PER_REQUEST],
                 position=None,
             )
-        print('Tracks added!')
-
-    def __len__(self):
-        if self.size is None:
-            self.tracks  # get the tracks to get the size
-        return self.size
+        print(f'{len(ids_to_add)} tracks added to spotify playlist {self.name}!')

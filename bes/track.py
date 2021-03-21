@@ -1,4 +1,6 @@
+from bes.api import get_or_create_spotify_api
 from bes.clean import clean
+from bes.score import get_risk_score
 
 
 class Track(object):
@@ -91,6 +93,8 @@ class SpotifyTrack(Track):
         self.id = id
         self.title = title
         self.artists = artists
+        # create search string
+        self.search_string = ' '.join(self.artists) + ' ' + self.title
 
     @classmethod
     def from_item(cls, item):
@@ -101,3 +105,25 @@ class SpotifyTrack(Track):
             title=item['name'],
             artists=[artist['name'] for artist in item['artists']],
         )
+
+    @classmethod
+    def from_youtube(cls, track, threshold=1.0):
+        api = get_or_create_spotify_api()
+        result = api.search(track.search_string)
+        matches = [cls.from_item(item) for item in result['tracks']['items']]
+        match = None
+        if len(matches):
+            risks = []
+            for i, match in enumerate(matches):
+                risk, missing_artists, mismatch = get_risk_score(track, match)
+                risks.append(risk)
+                print(f'\t- match {i}:\n\t\t- risk {risk}'
+                      f'\n\t\t- missing artists {" & ".join(missing_artists)}'
+                      f'\n\t\t- mismatch in name: {mismatch}')
+            if any(risk < threshold for risk in risks):
+                match = matches[risks.index(min(risks))]
+                print(f'matched and added track ID with risk score of {min(risks)}.')
+        if match is None:
+            raise ValueError(f'no match found on spotify for this track: name '
+                             f'{track.name} / search string {track.search_string}')
+        return match
