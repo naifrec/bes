@@ -22,7 +22,10 @@ def get_risk_score(track, match):
     expected_name = track.title.casefold().strip()
     matched_name = match.title.casefold().strip()
     i = 0
-    if expected_name != matched_name:
+    if len(expected_name) == 0:
+        # something problematic happend upstream, bump risk by 1
+        score += 1
+    elif expected_name != matched_name:
         indices = [i for i in range(min(len(expected_name), len(matched_name))) if matched_name[i] != expected_name[i]]
         index = len(expected_name) if not len(indices) else indices[0]
         score += (index + 1) / len(expected_name)
