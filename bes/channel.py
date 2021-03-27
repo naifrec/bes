@@ -1,5 +1,6 @@
 from bes import api
-from bes.playlist import SpotifyPlaylist, YouTubePlayList
+from bes.playlist import SpotifyPlaylist, SpotifySavedTracks, YouTubePlayList
+from bes.track import SpotifyTrack
 
 
 class Channel(object):
@@ -47,9 +48,9 @@ class Channel(object):
 class YouTubeChannel(Channel):
     backend = 'youtube'
 
-    def __init__(self):
+    def __init__(self, readonly=True):
         super().__init__()
-        self.api = api.get_or_create_youtube_api()
+        self.api = api.get_or_create_youtube_api(readonly=readonly)
 
     def _get_playlists(self):
         nextPageToken = None
@@ -75,6 +76,22 @@ class YouTubeChannel(Channel):
 
         return playlists
 
+    def add_playlist(self, name):
+        assert name not in self, f'Playlist {name} already exists'
+        request = self.api.playlists().insert(
+            part="snippet,status",
+            body={
+            "snippet": {
+                "title": name,
+            },
+            "status": {
+                "privacyStatus": "public"
+            }
+            }
+        )
+        response = request.execute()
+        return YouTubePlayList.from_item(response)
+
 
 class SpotifyChannel(Channel):
     backend = 'spotify'
@@ -90,8 +107,13 @@ class SpotifyChannel(Channel):
         return playlists
 
     def add_playlist(self, name):
-        self.api.user_playlist_create(
+        response = self.api.user_playlist_create(
             user=api.SPOTIFY_USER_ID,
             name=name,
             public=True,
         )
+        return SpotifyPlaylist.from_item(response)
+
+    def get_saved_tracks_playlist(self):
+        """Get user saved (a.k.a liked) tracks"""
+        return SpotifySavedTracks()
