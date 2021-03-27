@@ -1,4 +1,4 @@
-from bes.api import get_or_create_spotify_api
+from bes.api import get_or_create_spotify_api, get_or_create_youtube_api
 from bes.clean import clean
 from bes.score import get_risk_score
 
@@ -40,16 +40,67 @@ class YouTubeTrack(Track):
 
     @classmethod
     def from_item(cls, item):
+        # get channel title
         if 'videoOwnerChannelTitle' in item['snippet']:
             channel = item['snippet']['videoOwnerChannelTitle']
+        elif 'channelTitle' in item['snippet']:
+            channel = item['snippet']['channelTitle']
         else:
             raise ValueError('This video does not exist anymore.')
 
+        # get video ID
+        if 'contentDetails' in item:
+            video_id = item['contentDetails']['videoId']
+        elif 'id' in item:
+            video_id = item['id']['videoId']
+        else:
+            raise ValueError('This video does not have an ID')
+
         return cls(
-            id=item['contentDetails']['videoId'],
+            id=video_id,
             name=item['snippet']['title'],
             channel=channel,
         )
+
+    @classmethod
+    def from_spotify(cls, track, threshold=1.0):
+        # api search, show only top 5
+        api = get_or_create_youtube_api(readonly=False)
+        request = api.search().list(
+            part="snippet",
+            maxResults=5,
+            q=track.search_string,
+            type="video",
+        )
+        response = request.execute()
+        # convert items to YouTube track
+        matches = []
+        for i, item in enumerate(response['items']):
+            try:
+                match = cls.from_item(item)
+                matches.append(match)
+            except ValueError as e:
+                print(f'Could not add YouTube match {i+1} because of original error {e}.')
+                continue
+
+        # score each match if any, pick lowest scoring track if below threshold
+        match = None
+        if len(matches):
+            risks = []
+            for i, match in enumerate(matches):
+                risk, missing_artists, mismatch = get_risk_score(track, match)
+                risks.append(risk)
+                print(f'\t- match {i}:\n\t\t- risk {risk}'
+                      f'\n\t\t- missing artists {" & ".join(missing_artists)}'
+                      f'\n\t\t- mismatch in name: {mismatch}')
+            if any(risk < threshold for risk in risks):
+                match = matches[risks.index(min(risks))]
+                print(f'matched and added track ID with risk score of {min(risks)}.')
+        if match is None:
+            raise ValueError(f'no match found on youtube for this track: name '
+                             f'{track.name} / search string {track.search_string}')
+
+        return match
 
     def split_artists_from_title(self):
         # check if YouTube music automatically generated track
