@@ -71,6 +71,32 @@ class YouTubePlayList(PlayList):
                 break
         return tracks
 
+    def add_tracks(self, playlist):
+        ids_existing = [track.id for track in self]
+        ids_spotify = [track.id for track in playlist.to_youtube()]
+
+        ids_to_add = list(set(ids_spotify) - set(ids_existing))
+        print(f'There are:\n\t- {len(ids_spotify)} tracks matched from Spotify'
+              f'\n\t- {len(ids_existing)} tracks existing in Youtube playlist'
+              f'\n\t- {len(ids_to_add)} new tracks to add'
+             )
+
+        for video_id in ids_to_add:
+            request = self.api.playlistItems().insert(
+                part="snippet",
+                body={
+                    "snippet": {
+                        "playlistId": self.id,
+                        "position": 0,
+                        "resourceId": {
+                            "kind": "youtube#video",
+                            "videoId": video_id,
+                            }
+                        }
+            })
+            response = request.execute()
+        print(f'{len(ids_to_add)} tracks added to youtube playlist {self.name}!')
+
     @classmethod
     def from_item(cls, item):
         return cls(
@@ -152,3 +178,46 @@ class SpotifyPlaylist(PlayList):
                 position=None,
             )
         print(f'{len(ids_to_add)} tracks added to spotify playlist {self.name}!')
+
+    def to_youtube(self):
+        matched_tracks = []
+        for i, track in enumerate(self):
+            print(f'{i + 1:03} searching track on spotify: '
+                  f'{" & ".join(track.artists)} - {track.title}')
+            try:
+                matched_track = YouTubeTrack.from_spotify(track)
+                matched_tracks.append(matched_track)
+            except ValueError as e:
+                print(e)
+                continue
+        return matched_tracks
+
+
+class SpotifySavedTracks(SpotifyPlaylist):
+    """
+    User saved (a.k.a liked) tracks, not handled as a playlist resource by
+    spotify, so this is not strictly a playlist but more a list of tracks.
+
+    """
+    def __init__(self):
+        super().__init__(id=None, name='spotify likes', size=None)
+
+    @classmethod
+    def from_item(cls, item):
+        raise NotImplementedError
+
+    def _get_tracks(self):
+        offset = 0
+        tracks = []
+
+        while True:
+            response = self.api.current_user_saved_tracks(
+                limit=50,
+                offset=offset,
+            )
+            for item in response['items']:
+                tracks.append(SpotifyTrack.from_item(item))
+            offset = len(tracks)
+            if len(tracks) == response['total']:
+                break
+        return tracks
