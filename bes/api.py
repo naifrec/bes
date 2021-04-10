@@ -10,7 +10,7 @@ from spotipy.oauth2 import SpotifyOAuth
 from bes import REPO_ROOT
 
 
-YOUTUBE_API = None
+YOUTUBE_API = {}
 SPOTIFY_API = None
 
 
@@ -30,6 +30,20 @@ SCOPES = ["https://www.googleapis.com/auth/youtube.readonly",
 
 
 def create_youtube_api(readonly=True):
+    """
+    Create YouTube API endpoint.
+
+    Parameters
+    ----------
+    readonly : bool
+        Readonly API (can only perform read operation; but no write operation
+        like for instance creating a playlist or adding tracks to it).
+
+    Returns
+    -------
+    api : YouTube API endpoint.
+
+    """
     # Get credentials and create an API client
     scopes = SCOPES[:1] if readonly else SCOPES[1:]
     flow = google_auth_oauthlib.flow.InstalledAppFlow.from_client_secrets_file(
@@ -41,10 +55,11 @@ def create_youtube_api(readonly=True):
 
 
 def get_or_create_youtube_api(readonly=True):
+    """Get existing API endpoint or create one if not."""
     global YOUTUBE_API
-    if YOUTUBE_API is None:
-        YOUTUBE_API = create_youtube_api(readonly)
-    return YOUTUBE_API
+    if readonly not in YOUTUBE_API:
+        YOUTUBE_API[readonly] = create_youtube_api(readonly)
+    return YOUTUBE_API[readonly]
 
 
 ###############################################################################
@@ -59,6 +74,7 @@ SPOTIFY_CLIENT_ID = os.getenv('SPOTIFY_CLIENT_ID')
 SPOTIFY_CLIENT_SECRET = os.getenv('SPOTIFY_CLIENT_SECRET')
 
 def get_or_create_spotify_api():
+    """Get existing API endpoint or create one if not."""
     global SPOTIFY_API
     if SPOTIFY_API is None:
         SPOTIFY_API = spotipy.Spotify(

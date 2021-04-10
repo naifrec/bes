@@ -3,47 +3,107 @@ from bes.track import SpotifyTrack, YouTubeTrack
 
 
 class PlayList(object):
+    """
+    Abstract PlayList class defining the API of object wrapping the concept of
+    a playlist. A playlist has tracks associated to it, and allows adding more
+    tracks to it.
+
+    """
     name = None
     id = None
-    size = None
-
-    def __init__(self, playlist_id):
-        raise NotImplementedError
+    _tracks = None
 
     @property
     def tracks(self):
+        """
+        Property which contains the list of all tracks existing in this
+        playlist. It is a "lazy" attribute, until you access it for the first
+        time, the query to retrieve the tracks will not be performed.
+
+        """
+        if self._tracks is None:
+            self._tracks = self._get_tracks()
+        return self._tracks
+
+    def add_tracks(self, playlist):
+        """Add tracks in provided playlist which are not yet in this playlist."""
         raise NotImplementedError
 
-    def add_tracks(self, ids):
+    def _get_tracks(self):
+        """Backend specific way of retrieving tracks in playlist"""
         raise NotImplementedError
 
     @classmethod
     def from_item(cls, item):
+        """Create PlayList object from the REST API JSON."""
         raise NotImplementedError
 
     def __len__(self):
+        """Length of playlists (i.e. how many tracks)"""
         return len(self.tracks)
 
     def __iter__(self):
+        """
+        One can iterate over the tracks of the playlist in a for loop.
+
+        Example
+        -------
+        playlist = YouTubePlayList(id=<some-id>, name=<some-name>)
+        for i, track in enumerate(playlist):
+            print(i, track.name, track.artists)
+
+        """
         yield from self.tracks
+
+    def __eq__(self, other):
+        """
+        Checks equality between two playlists. Either same name or same ID.
+        Note that I am making the (potentially wrong) assumption that you do
+        not have playlist with duplicated names.
+
+        Parameters
+        ----------
+        other : bes.playlist.PlayList
+            Other playlist instance.
+
+        Returns
+        -------
+        are_equal : bool
+
+        """
+        return (self.id == other.id) or (self.name == other.name)
 
 
 class YouTubePlayList(PlayList):
-    def __init__(self, id, name, size=None):
+    """
+    YouTube playlist. Note that it is unlikely that you will instantiate
+    a YouTube playlist yourself. Use the YouTubeChannel instance to retrieve
+    existing playlists.
+
+    Parameters
+    ----------
+    id : str
+        Playlist ID.
+    name : str
+        Playlist name.
+
+    """
+    def __init__(self, id, name):
         self.api = api.get_or_create_youtube_api()
         self.id = id
         self.name = name
-        self.size = size
         self._tracks = None
 
-    @property
-    def tracks(self):
-        if self._tracks is None:
-            self._tracks = self._get_tracks()
-            self.size = len(self._tracks)
-        return self._tracks
-
     def _get_tracks(self):
+        """
+        YouTube specific way of retrieving all tracks of a playlist.
+
+        Returns
+        -------
+        tracks : list of bes.track.YouTubeTrack
+            List of tracks.
+
+        """
         nextPageToken = None
         tracks = []
 
@@ -72,6 +132,28 @@ class YouTubePlayList(PlayList):
         return tracks
 
     def add_tracks(self, playlist):
+        """
+        Add tracks from other playlist, specifically:
+        1. will cast input playlist to YouTube (call .to_youtube) to retrieve
+           only the tracks for which there are matches on YouTube.
+        2. will compare the IDs of matched tracks with existing IDs in the
+           playlist.
+        3. will remove tracks for which already exist in the playlist
+        4. will add remaining tracks to the playlist.
+
+        Notes
+        -----
+        Adding a track costs 50 points. By default, you have 20,000 points to
+        spend per day. Quick math: that means you can only add 400 tracks per
+        day. In practice even less as retrieving the tracks from the playlist
+        already cost you points (although less I think).
+
+        Parameters
+        ----------
+        playlist : bes.playlist.PlayList
+            Other playlist to add tracks from.
+
+        """
         ids_existing = [track.id for track in self]
         ids_spotify = [track.id for track in playlist.to_youtube()]
 
@@ -94,17 +176,35 @@ class YouTubePlayList(PlayList):
                             }
                         }
             })
-            response = request.execute()
+            request.execute()
+        # TODO: add the tracks to _tracks?
         print(f'{len(ids_to_add)} tracks added to youtube playlist {self.name}!')
 
     @classmethod
     def from_item(cls, item):
+        """Create YouTube Playlist from the REST API JSON"""
         return cls(
             id=item['id'],
             name=item['snippet']['localized']['title'],
         )
 
+    def to_youtube(self):
+        """Cast tracks to YouTube format (no-op)"""
+        return self
+
     def to_spotify(self):
+        """
+        Cast tracks of playlist to Spotify. For each track, it will look for
+        matches on Spotify, score them, and return the track scoring the lowest
+        risk (under a certain threshold). If no such track exist; the track
+        is simply skipped and assumed not to exist on Spotify.
+
+        Returns
+        -------
+        matched_tracks : list of bes.track.SpotifyTrack
+            Spotify Tracks matched from YouTube.
+
+        """
         matched_tracks = []
         for i, track in enumerate(self):
             print(f'{i + 1:03} searching track on spotify: '
@@ -119,23 +219,32 @@ class YouTubePlayList(PlayList):
 
 
 class SpotifyPlaylist(PlayList):
+    """
+    Spotify playlist. Note that it is unlikely that you will instantiate
+    a Spotify playlist yourself. Use the SpotifyChannel instance to retrieve
+    existing playlists.
+
+    """
+    # spotipy / spotify allow adding up to 100 tracks per API request
+    # in contrast, YouTube / Google API requires to add track by track
     _MAX_TRACKS_PER_REQUEST = 100
 
-    def __init__(self, id, name, size=None):
+    def __init__(self, id, name):
         self.api = api.get_or_create_spotify_api()
         self.id = id
         self.name = name
-        self.size = size
         self._tracks = None
 
-    @property
-    def tracks(self):
-        if self._tracks is None:
-            self._tracks = self._get_tracks()
-            self.size = len(self._tracks)
-        return self._tracks
-
     def _get_tracks(self):
+        """
+        Spotipy specific way of retrieving all tracks of a playlist.
+
+        Returns
+        -------
+        tracks : list of bes.track.YouTubeTrack
+            List of tracks.
+
+        """
         offset = 0
         tracks = []
 
@@ -153,15 +262,28 @@ class SpotifyPlaylist(PlayList):
                 break
         return tracks
 
-    @classmethod
-    def from_item(cls, item):
-        return cls(
-            id=item['id'],
-            name=item['name'],
-            size=item['tracks']['total'],
-        )
-
     def add_tracks(self, playlist):
+        """
+        Add tracks from other playlist, specifically:
+        1. will cast input playlist to Spotify (call .to_spotify) to retrieve
+           only the tracks for which there are matches on Spotify.
+        2. will compare the IDs of matched tracks with existing IDs in the
+           playlist.
+        3. will remove tracks for which already exist in the playlist
+        4. will add remaining tracks to the playlist.
+
+        Notes
+        -----
+        Contrary to YouTube; there are no limits to how many tracks you can
+        add per day (as far as I know, although I suspect that if you start
+        spamming the API you may get temporary cooldown).
+
+        Parameters
+        ----------
+        playlist : bes.playlist.PlayList
+            Other playlist to add tracks from.
+
+        """
         ids_existing = [track.id for track in self]
         ids_youtube = [track.id for track in playlist.to_spotify()]
 
@@ -179,7 +301,27 @@ class SpotifyPlaylist(PlayList):
             )
         print(f'{len(ids_to_add)} tracks added to spotify playlist {self.name}!')
 
+    @classmethod
+    def from_item(cls, item):
+        """Create Spotify Playlist from the REST API JSON"""
+        return cls(
+            id=item['id'],
+            name=item['name'],
+        )
+
     def to_youtube(self):
+        """
+        Cast tracks of playlist to YouTube. For each track, it will look for
+        matches on YouTube, score them, and return the track scoring the lowest
+        risk (under a certain threshold). If no such track exist; the track
+        is simply skipped and assumed not to exist on YouTube.
+
+        Returns
+        -------
+        matched_tracks : list of bes.track.YouTubeTrack
+            YouTube Tracks matched from YouTube.
+
+        """
         matched_tracks = []
         for i, track in enumerate(self):
             print(f'{i + 1:03} searching track on spotify: '
@@ -192,21 +334,26 @@ class SpotifyPlaylist(PlayList):
                 continue
         return matched_tracks
 
+    def to_spotify(self):
+        """Cast tracks to Spotify format (no-op)"""
+        return self
+
 
 class SpotifySavedTracks(SpotifyPlaylist):
     """
     User saved (a.k.a liked) tracks, not handled as a playlist resource by
-    spotify, so this is not strictly a playlist but more a list of tracks.
+    Spotify, so this is not strictly a playlist but more a list of tracks.
 
     """
     def __init__(self):
-        super().__init__(id=None, name='spotify likes', size=None)
+        super().__init__(id=None, name='spotify likes')
 
     @classmethod
     def from_item(cls, item):
         raise NotImplementedError
 
     def _get_tracks(self):
+        """Spotifpy specific way of getting liked tracks."""
         offset = 0
         tracks = []
 
