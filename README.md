@@ -24,6 +24,13 @@ spotify_playlist = spotify_channel.add_playlist(playlist_name)
 spotify_playlist.add_tracks(youtube_playlist)
 ```
 
+You can find example scripts in the `run` folder:
+* `run/from_youtube_to_spotify.py`
+* `run/from_spotify_to_youtube.py`
+
+These are clearly tuned to my specific use case, but can be used as basis
+for your own work.
+
 ## 2. Installation instructions
 
 ### 2.1 Python dependencies
