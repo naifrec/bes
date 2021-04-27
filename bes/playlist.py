@@ -63,7 +63,7 @@ class PlayList(object):
 
         Parameters
         ----------
-        other : bes.playlist.PlayList
+        other : bes.playlist.PlayList or str
             Other playlist instance.
 
         Returns
@@ -71,7 +71,21 @@ class PlayList(object):
         are_equal : bool
 
         """
-        return (self.id == other.id) or (self.name == other.name)
+        if isinstance(other, PlayList):
+            return (self.id == other.id) or (self.name == other.name)
+        else:
+            # assume string
+            return (self.name == other) or (self.id == other)
+
+    def __getitem__(self, index):
+        """
+        Get track by index.
+
+        """
+        return self.tracks[index]
+
+    def __str__(self):
+        return f'{self.__class__.__name__}(name={self.name}, id={self.id})'
 
 
 class YouTubePlayList(PlayList):
@@ -143,10 +157,12 @@ class YouTubePlayList(PlayList):
 
         Notes
         -----
-        Adding a track costs 50 points. By default, you have 20,000 points to
-        spend per day. Quick math: that means you can only add 400 tracks per
+        YouTube API has [a quota](https://developers.google.com/youtube/v3/getting-started#calculating-quota-usage)
+        on the number of operation per day. Adding a track costs 50 points, one
+        search is 100 points. By default, you have 20,000 points to
+        spend per day. Quick math: that means you can only add 130 tracks per
         day. In practice even less as retrieving the tracks from the playlist
-        already cost you points (although less I think).
+        already cost you points (although only 10 points per 25 tracks).
 
         Parameters
         ----------
