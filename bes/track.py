@@ -60,6 +60,9 @@ class Track(object):
         """
         raise NotImplementedError
 
+    def __str__(self):
+        return f'{self.__class__.__name__}(artists={self.artists}, title={self.title}, id={self.id})'
+
 
 class YouTubeTrack(Track):
     """
@@ -78,12 +81,15 @@ class YouTubeTrack(Track):
         Video / track name
     channel : str
         Name of channel posting video.
+    item : dict
+        Original response to request.
 
     """
-    def __init__(self, id, name, channel):
+    def __init__(self, id, name, channel, item):
         self.id = id
         self.channel = channel
         self.name = name
+        self.item = item
 
         # split artists from track title
         artists, title = split_artists_from_title(self)
@@ -116,6 +122,7 @@ class YouTubeTrack(Track):
             id=video_id,
             name=item['snippet']['title'],
             channel=channel,
+            item=item,
         )
 
     @classmethod
@@ -175,12 +182,15 @@ class SpotifyTrack(Track):
         Track title
     artists : list of str
         List of artists.
+    item : dict
+        Original response to request.
 
     """
-    def __init__(self, id, title, artists):
+    def __init__(self, id, title, artists, item):
         self.id = id
         self.title = title
         self.artists = artists
+        self.item = item
         # create search string
         self.search_string = ' '.join(self.artists) + ' ' + self.title
 
@@ -193,6 +203,7 @@ class SpotifyTrack(Track):
             id=item['id'],
             title=item['name'],
             artists=[artist['name'] for artist in item['artists']],
+            item=item,
         )
 
     @classmethod
