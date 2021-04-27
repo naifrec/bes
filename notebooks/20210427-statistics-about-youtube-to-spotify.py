@@ -44,6 +44,13 @@ for i, playlist in enumerate(channel):
 for name, playlist in channel.items():
     print(name, playlist, len(playlist))
 
+for track in channel['microhouse case']:
+    print(track.item['album']['release_date'])
+
+track.item['album']
+
+track.item['album'].keys()
+
 df_data = defaultdict(list)
 for playlist in channel:
     if 'case' not in playlist.name:
@@ -54,6 +61,7 @@ for playlist in channel:
         df_data['artists'].append(track.artists)
         df_data['duration'].append(track.item['duration_ms'])
         df_data['popularity'].append(track.item['popularity'])
+        df_data['release_date'].append(int(track.item['album']['release_date'][:4]))
 df = pd.DataFrame.from_dict(df_data)
 # clean up playlist name
 df['playlist'] = df['playlist'].str.replace(' case', '')
@@ -141,4 +149,59 @@ plt.show()
 
 # -
 
+df_timeline = df.groupby(['release_date', 'playlist']).count()
+df_timeline = df_timeline[['title']].rename({'title': 'count'}, axis=1)
 
+# +
+playlists = df['playlist'].value_counts().index.tolist()
+years = list(range(df['release_date'].min(), df['release_date'].max() + 1))
+
+for year in years:
+    if year not in df_timeline.index.get_level_values(0):
+        for playlist in playlists:
+            df_timeline.loc[(year, playlist), 'count'] = 0
+    else:
+        for playlist in playlists:
+            if playlist not in df_timeline.loc[year].index:
+                df_timeline.loc[(year, playlist), 'count'] = 0
+
+# +
+df_timeline = df_timeline.sort_index()
+
+df_timeline = df_timeline.swaplevel().sort_index()
+# -
+
+len(years)
+
+# +
+palette = sns.color_palette("husl", 8)
+fig, ax = plt.subplots(figsize=(10, 8))
+sns.set_theme(style="whitegrid", font='Roboto')
+
+plots = []
+width = 0.5
+bottom = np.zeros_like(df_timeline.loc['ambient', 'count'].values)
+for i, playlist in enumerate(playlists):
+    counts = df_timeline.loc[playlist, 'count'].values
+    p = plt.bar(
+        years, counts, width,
+        bottom=bottom,
+        label=playlist,
+        log=False,
+        color=palette[i],
+    )
+    bottom += counts
+
+# title
+ax.text(x=0.0, y=1.05, s='Timeline of track release year', fontsize=18, weight='bold', ha='left', va='bottom', transform=ax.transAxes)
+ax.text(x=0.0, y=1.01, s='Ambient has most consistent presence throughout', fontsize=16, alpha=0.75, ha='left', va='bottom', transform=ax.transAxes)
+ax.text(x=0.43, y=-0.12, s='Source: Spotify API | Data viz: @gsautiere', fontsize=14, weight='medium', alpha=1.0, ha='left', va='bottom', transform=ax.transAxes)
+
+# prettify
+sns.despine(bottom=True, left=True)  # remove borders of plot
+plt.legend(fontsize=16)
+plt.show()
+
+# +
+# split timeline by each genre
+# normalize
