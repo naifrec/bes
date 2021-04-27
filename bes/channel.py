@@ -25,8 +25,8 @@ class Channel(object):
 
         """
         if self._playlists is None:
-            self._playlists = self._get_playlists()
-        return self._playlists
+            self._playlists = {pl.name: pl for pl in self._get_playlists()}
+        return self._playlists.values()
 
     def add_playlist(self, name):
         """Add a playlist by name. Backend specific."""
@@ -78,6 +78,15 @@ class Channel(object):
         """
         yield from self.playlists
 
+    def __getitem__(self, playlist_name_or_id):
+        if self._playlists is None:
+            self.playlists
+        return self._playlists[playlist_name_or_id]
+
+    def items(self):
+        if self._playlists is None:
+            self.playlists
+        return self._playlists.items()
 
 class YouTubeChannel(Channel):
     """
